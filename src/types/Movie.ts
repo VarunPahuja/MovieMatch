@@ -8,6 +8,8 @@ export interface Movie {
   description: string;
   poster: string;
   duration: number;
+  released: boolean;
+  popularity?: number;
 }
 
 export interface Room {

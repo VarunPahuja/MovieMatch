@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Shuffle, Users, Trophy } from 'lucide-react';
+import { Shuffle, Users, Trophy, Heart, X } from 'lucide-react';
 import { Movie, MovieMatch, RoomUser } from '@/types/Movie';
 import { MovieCard } from './MovieCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import movies from '@/data/movies.json';
+import moviesData from '@/data/clean_movies.json';
+
+const movies: Movie[] = moviesData as Movie[];
+
 
 interface SwipeAreaProps {
   roomCode: string;
@@ -12,14 +15,70 @@ interface SwipeAreaProps {
   matches: MovieMatch[];
   onSwipe: (movieId: number, liked: boolean) => void;
   onNewMatch: (match: MovieMatch) => void;
+  genres: string[];
+  language: string;
+  yearRange: [number, number];
+  ratingRange: [number, number];
 }
 
-export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: SwipeAreaProps) {
+export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genres, language, yearRange, ratingRange }: SwipeAreaProps) {
+  // Responsive layout detection
+  const [layout, setLayout] = useState<'landscape' | 'portrait'>('portrait');
+  useEffect(() => {
+    const check = () => {
+      if (window.innerWidth > 900 && window.innerWidth > window.innerHeight) {
+        setLayout('landscape');
+      } else {
+        setLayout('portrait');
+      }
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
   const [currentMovieIndex, setCurrentMovieIndex] = useState(0);
   const [showMatches, setShowMatches] = useState(false);
   const [swipeHistory, setSwipeHistory] = useState<number[]>([]);
+  type SortBy = 'rating' | 'year' | 'title' | 'popularity' | 'duration' | 'random';
+  const [sortBy, setSortBy] = useState<SortBy>('rating');
 
-  const currentMovie = movies[currentMovieIndex] as Movie;
+
+  // Filter movies by selected genres, language, year, and rating range
+  let filteredMovies = movies.filter((m) => {
+    if (m.released === false) return false;
+    // Genre filter
+    if (genres.length > 0) {
+      if (Array.isArray(m.genre)) {
+        if (!m.genre.some((g) => genres.includes(g))) return false;
+      } else {
+        if (!genres.includes(m.genre)) return false;
+      }
+    }
+    // Language filter (case-insensitive, fallback to English if missing)
+    if (language && Object.prototype.hasOwnProperty.call(m, 'language')) {
+      // @ts-expect-error: Some movie objects may not have a language property, but we want to check if it exists and compare it if present.
+      if (typeof m.language === 'string' && m.language.toLowerCase() !== language.toLowerCase()) return false;
+    } else if (language && language.toLowerCase() !== 'english') {
+      // If movie has no language field, only show for English
+      return false;
+    }
+    // Year range filter
+    if (yearRange && (m.year < yearRange[0] || m.year > yearRange[1])) return false;
+    // Rating range filter
+    if (ratingRange && (m.rating < ratingRange[0] || m.rating > ratingRange[1])) return false;
+    return true;
+  });
+
+  // Sort movies
+  filteredMovies = [...filteredMovies];
+  if (sortBy === 'rating') filteredMovies.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  else if (sortBy === 'year') filteredMovies.sort((a, b) => (b.year || 0) - (a.year || 0));
+  else if (sortBy === 'title') filteredMovies.sort((a, b) => a.title.localeCompare(b.title));
+  else if (sortBy === 'popularity') filteredMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  else if (sortBy === 'duration') filteredMovies.sort((a, b) => (b.duration || 0) - (a.duration || 0));
+  else if (sortBy === 'random') filteredMovies.sort(() => Math.random() - 0.5);
+
+  const currentMovie = filteredMovies[currentMovieIndex] as Movie;
 
   const handleSwipe = (movieId: number, liked: boolean) => {
     onSwipe(movieId, liked);
@@ -28,7 +87,7 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: Swi
     // Move to next movie
     setTimeout(() => {
       setCurrentMovieIndex(prev => 
-        prev < movies.length - 1 ? prev + 1 : 0
+        prev < filteredMovies.length - 1 ? prev + 1 : 0
       );
     }, 500);
 
@@ -49,7 +108,7 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: Swi
     }
   };
 
-  const nextMovies = movies.slice(currentMovieIndex + 1, currentMovieIndex + 3) as Movie[];
+  const nextMovies = filteredMovies.slice(currentMovieIndex + 1, currentMovieIndex + 3) as Movie[];
 
   if (showMatches) {
     return (
@@ -106,6 +165,23 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: Swi
 
   return (
     <div className="min-h-screen p-6">
+      {/* Sort By Dropdown */}
+      <div className="max-w-md mx-auto mb-4 flex justify-end">
+        <label className="mr-2 font-medium text-muted-foreground">Sort by:</label>
+        <select
+          className="border rounded px-3 py-1 bg-background text-foreground"
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value as SortBy)}
+        >
+          <option value="rating">Rating</option>
+          <option value="year">Year</option>
+          <option value="title">Title</option>
+          <option value="popularity">Popularity</option>
+          <option value="duration">Duration</option>
+          <option value="random">Random</option>
+        </select>
+      </div>
+
       {/* Header */}
       <div className="max-w-md mx-auto mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -134,21 +210,9 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: Swi
         </div>
       </div>
 
-      {/* Movie Stack */}
-      <div className="relative max-w-md mx-auto">
-        {/* Background Cards */}
-        {nextMovies.map((movie, index) => (
-          <div
-            key={movie.id}
-            className="absolute inset-0"
-            style={{
-              transform: `translateY(${(index + 1) * 8}px) scale(${1 - (index + 1) * 0.05})`,
-              zIndex: -index - 1
-            }}
-          >
-            <Card className="w-80 h-[500px] mx-auto bg-muted/20 border-muted" />
-          </div>
-        ))}
+      {/* Movie Stack - Responsive and Spacious for Desktop */}
+      <div className="relative flex flex-col items-center max-w-3xl mx-auto min-h-[700px]">
+      {/* Background Cards removed */}
 
         {/* Current Movie */}
         {currentMovie && (
@@ -156,6 +220,7 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: Swi
             movie={currentMovie}
             onSwipe={handleSwipe}
             isActive={true}
+            layout={layout}
           />
         )}
       </div>
@@ -163,7 +228,7 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: Swi
       {/* Progress */}
       <div className="max-w-md mx-auto mt-6">
         <div className="flex justify-center gap-1">
-          {movies.slice(0, 10).map((_, index) => (
+          {filteredMovies.slice(0, 10).map((_, index) => (
             <div
               key={index}
               className={`h-2 w-8 rounded-full transition-colors duration-300 ${
@@ -177,7 +242,7 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch }: Swi
           ))}
         </div>
         <p className="text-center text-sm text-muted-foreground mt-2">
-          Movie {currentMovieIndex + 1} of {movies.length}
+          Movie {currentMovieIndex + 1} of {filteredMovies.length}
         </p>
       </div>
     </div>
