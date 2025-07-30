@@ -223,12 +223,14 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
         {/* Header */}
         <div className="max-w-md mx-auto mb-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="text-center">
-              <h2 className="text-xl font-bold">Room: {roomCode}</h2>
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <Users className="w-4 h-4" />
-                {users.length} members
-              </p>
+            <div className="flex-1">
+              <h2 className="text-xl font-bold text-center">Room: {roomCode}</h2>
+              <div className="flex justify-center">
+                <p className="text-sm text-muted-foreground flex items-center gap-1 text-left max-w-xs mx-auto">
+                  <Users className="w-4 h-4" />
+                  {users.length} members
+                </p>
+              </div>
             </div>
             <div className="flex gap-2">
               {matches.length > 0 && (
@@ -241,9 +243,6 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
                   {matches.length}
                 </Button>
               )}
-              <Button variant="outline" size="sm">
-                <Shuffle className="w-4 h-4" />
-              </Button>
             </div>
           </div>
         </div>
