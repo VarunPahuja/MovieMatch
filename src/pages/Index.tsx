@@ -1,7 +1,6 @@
 
 
 import { useState } from 'react';
-import StartScreen from '@/components/StartScreen';
 import { RoomSetup } from '@/components/RoomSetup';
 import { SwipeArea } from '@/components/SwipeArea';
 import { Room, RoomUser, MovieMatch, MovieSwipe } from '@/types/Movie';
@@ -10,7 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 
 
 const Index = () => {
-  const [showStart, setShowStart] = useState(true);
+  // const [showStart, setShowStart] = useState(true);
   // Remove filters state, sidebar handles all filtering
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [currentUser, setCurrentUser] = useState<RoomUser | null>(null);
@@ -118,10 +117,7 @@ const Index = () => {
     });
   };
 
-  // 1. Show start screen
-  if (showStart) {
-    return <StartScreen onContinue={() => setShowStart(false)} />;
-  }
+
 
 
   // 2. Skip initial filter selection, go straight to room setup or main app
