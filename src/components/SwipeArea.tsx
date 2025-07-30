@@ -207,6 +207,8 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
         languages={allLanguages}
         selectedLanguage={selectedLanguage}
         onLanguageChange={setSelectedLanguage}
+        sortBy={sortBy}
+        onSortByChange={(s) => setSortBy(s as SortBy)}
         onReset={() => {
           setSelectedGenres(allGenres);
           setSelectedYearRange([DEFAULT_MIN_YEAR, new Date().getFullYear()]);
@@ -216,22 +218,7 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
       />
       {/* Main content */}
       <div className="flex-1 p-6">
-        {/* Sort By Dropdown */}
-        <div className="max-w-md mx-auto mb-4 flex justify-end">
-          <label className="mr-2 font-medium text-muted-foreground">Sort by:</label>
-          <select
-            className="border rounded px-3 py-1 bg-background text-foreground"
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value as SortBy)}
-          >
-            <option value="rating">Rating</option>
-            <option value="year">Year</option>
-            <option value="title">Title</option>
-            <option value="popularity">Popularity</option>
-            <option value="duration">Duration</option>
-            <option value="random">Random</option>
-          </select>
-        </div>
+
 
         {/* Header */}
         <div className="max-w-md mx-auto mb-6">
