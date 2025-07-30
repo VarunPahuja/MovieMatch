@@ -1,7 +1,7 @@
 
+
 import { useState } from 'react';
 import StartScreen from '@/components/StartScreen';
-import GenreSelectionV2 from '@/components/GenreSelectionV2';
 import { RoomSetup } from '@/components/RoomSetup';
 import { SwipeArea } from '@/components/SwipeArea';
 import { Room, RoomUser, MovieMatch, MovieSwipe } from '@/types/Movie';
@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [showStart, setShowStart] = useState(true);
-  const [filters, setFilters] = useState<any | null>(null); // { genres, language, yearRange, minRating }
+  // Remove filters state, sidebar handles all filtering
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [currentUser, setCurrentUser] = useState<RoomUser | null>(null);
   const [matches, setMatches] = useState<MovieMatch[]>([]);
@@ -123,10 +123,8 @@ const Index = () => {
     return <StartScreen onContinue={() => setShowStart(false)} />;
   }
 
-  // 2. Show genre/language/year/rating selection
-  if (!filters) {
-    return <GenreSelectionV2 onSelect={setFilters} />;
-  }
+
+  // 2. Skip initial filter selection, go straight to room setup or main app
 
   // 3. Show room setup if no current room
   if (!currentRoom || !currentUser) {
@@ -146,10 +144,10 @@ const Index = () => {
       matches={matches}
       onSwipe={handleSwipe}
       onNewMatch={handleNewMatch}
-      genres={filters.genres}
-      language={filters.language}
-      yearRange={filters.yearRange}
-      ratingRange={filters.ratingRange}
+      genres={[]}
+      language={''}
+      yearRange={[2022, new Date().getFullYear()]}
+      ratingRange={[6.5, 10]}
     />
   );
 };
