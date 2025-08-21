@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
 import moviesData from '@/data/clean_movies.json';
+import { fetchRelevantMovieTitlesFromTMDB, filterMoviesByTMDBTitles } from '@/lib/tmdbFilter';
 import { FilterSidebar } from './FilterSidebar';
 
 
@@ -29,24 +30,46 @@ interface SwipeAreaProps {
 }
 
 export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genres, language, yearRange, ratingRange }: SwipeAreaProps) {
-  // Gather all genres and languages from movies
+  // State for TMDB-filtered movies
+  const [tmdbTitles, setTmdbTitles] = useState<string[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    fetchRelevantMovieTitlesFromTMDB()
+      .then(titles => { if (mounted) { setTmdbTitles(titles); setLoading(false); } })
+      .catch(e => { if (mounted) { setError('Failed to fetch TMDB movies'); setLoading(false); } });
+    return () => { mounted = false; };
+  }, []);
+  // Filter local movies by TMDB titles if available
+  const filteredByTMDB = useMemo(() => {
+    if (!tmdbTitles) return [];
+    return filterMoviesByTMDBTitles(movies, tmdbTitles);
+  }, [tmdbTitles]);
+
+  // Use filtered movies for all further logic
+  const moviesToUse = tmdbTitles ? filteredByTMDB : movies;
+
+  // Gather all genres and languages from moviesToUse
   const allGenres = useMemo(() => {
     const set = new Set<string>();
-    movies.forEach(m => {
+    moviesToUse.forEach(m => {
       if (Array.isArray(m.genre)) m.genre.forEach(g => set.add(g));
       else if (typeof m.genre === 'string') set.add(m.genre);
     });
     return Array.from(set).sort();
-  }, []);
+  }, [moviesToUse]);
   const allLanguages = useMemo(() => {
     const set = new Set<string>();
-    movies.forEach(m => {
+    moviesToUse.forEach(m => {
       if ('language' in m && m.language) set.add(m.language);
     });
     return Array.from(set).sort();
-  }, []);
-  const minYear = useMemo(() => Math.min(...movies.map(m => m.year)), []);
-  const maxYear = useMemo(() => Math.max(...movies.map(m => m.year)), []);
+  }, [moviesToUse]);
+  const minYear = useMemo(() => Math.min(...moviesToUse.map(m => m.year)), [moviesToUse]);
+  const maxYear = useMemo(() => Math.max(...moviesToUse.map(m => m.year)), [moviesToUse]);
 
   // Local filter state
   const [selectedGenres, setSelectedGenres] = useState<string[]>(allGenres);
@@ -75,7 +98,7 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
   const [sortBy, setSortBy] = useState<SortBy>('rating');
 
   // Filter movies by selected genres, language, year, and rating range
-  let filteredMovies = movies.filter((m) => {
+  let filteredMovies = moviesToUse.filter((m) => {
     if (m.released === false) return false;
     // Genre filter
     if (selectedGenres.length > 0) {
@@ -109,6 +132,13 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
   else if (sortBy === 'random') filteredMovies.sort(() => Math.random() - 0.5);
 
   const currentMovie = filteredMovies[currentMovieIndex] as Movie;
+
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen text-xl">Loading relevant movies...</div>;
+  }
+  if (error) {
+    return <div className="flex items-center justify-center min-h-screen text-xl text-red-500">{error}</div>;
+  }
 
   const handleSwipe = (movieId: number, liked: boolean) => {
     onSwipe(movieId, liked);
