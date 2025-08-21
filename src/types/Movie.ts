@@ -10,6 +10,7 @@ export interface Movie {
   duration: number;
   released: boolean;
   popularity?: number;
+  language?: string;
 }
 
 export interface Room {
