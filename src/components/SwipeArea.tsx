@@ -398,19 +398,19 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
           </div>
         </div>
 
-        {/* Movie Stack - Responsive and Spacious for Desktop */}
-        <div className="relative flex flex-col items-center max-w-3xl mx-auto min-h-[700px]">
-        {/* Background Cards removed */}
-
-          {/* Current Movie */}
-          {currentMovie && (
-            <MovieCard
-              movie={currentMovie}
-              onSwipe={handleSwipe}
-              isActive={true}
-              layout={layout}
-            />
-          )}
+        {/* Movie Display - Optimized Container */}
+        <div className="flex-1 flex items-center justify-center px-4 py-8">
+          <div className="w-full max-w-7xl mx-auto flex items-center justify-center min-h-[600px]">
+            {/* Current Movie */}
+            {currentMovie && (
+              <MovieCard
+                movie={currentMovie}
+                onSwipe={handleSwipe}
+                isActive={true}
+                layout={layout}
+              />
+            )}
+          </div>
         </div>
 
         {/* Progress */}

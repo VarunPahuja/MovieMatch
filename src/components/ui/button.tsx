@@ -19,10 +19,12 @@ const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         movie: "bg-gradient-primary text-primary-foreground hover:scale-105 shadow-card font-semibold",
-        like: "bg-movie-like text-foreground hover:bg-movie-like/90 hover:scale-105 shadow-lg",
-        pass: "bg-movie-pass text-foreground hover:bg-movie-pass/90 hover:scale-105 shadow-lg",
+        like: "bg-green-500 text-white hover:bg-green-600 hover:scale-105 shadow-lg hover:shadow-green-500/25",
+        pass: "bg-gray-500 text-white hover:bg-gray-600 hover:scale-105 shadow-lg hover:shadow-gray-500/25",
         match: "bg-gradient-match text-secondary-foreground hover:scale-105 shadow-glow animate-glow-pulse font-bold",
         room: "bg-card text-card-foreground border-2 border-primary/20 hover:border-primary hover:shadow-glow",
+        capsuleLike: "bg-green-500 text-white hover:bg-green-600 hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-green-500/30 rounded-full",
+        capsulePass: "bg-gray-500 text-white hover:bg-gray-600 hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-gray-500/30 rounded-full",
       },
       size: {
         default: "h-10 px-4 py-2",
@@ -31,6 +33,8 @@ const buttonVariants = cva(
         xl: "h-14 rounded-lg px-12 text-base",
         icon: "h-10 w-10",
         swipe: "h-16 w-16 rounded-full text-lg",
+        capsule: "h-12 px-8 rounded-full text-base font-semibold",
+        capsuleSm: "h-10 px-6 rounded-full text-sm font-semibold",
       },
     },
     defaultVariants: {
