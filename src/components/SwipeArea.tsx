@@ -7,7 +7,9 @@ import { Card, CardContent } from '@/components/ui/card';
 
 import moviesData from '@/data/clean_movies.json';
 import { fetchRelevantMovieTitlesFromTMDB, filterMoviesByTMDBTitles } from '@/lib/tmdbFilter';
+import { Loader2 } from 'lucide-react';
 import { FilterSidebar } from './FilterSidebar';
+
 
 
 const movies: Movie[] = moviesData as Movie[];
@@ -30,16 +32,29 @@ interface SwipeAreaProps {
 }
 
 export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genres, language, yearRange, ratingRange }: SwipeAreaProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   // State for TMDB-filtered movies
   const [tmdbTitles, setTmdbTitles] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Sort order state: 'desc' = High→Low (default), 'asc' = Low→High
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
+  // Load 5 pages first, then 10 more in the background
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    fetchRelevantMovieTitlesFromTMDB()
-      .then(titles => { if (mounted) { setTmdbTitles(titles); setLoading(false); } })
+    fetchRelevantMovieTitlesFromTMDB(5)
+      .then(titles => {
+        if (mounted) {
+          setTmdbTitles(titles);
+          setLoading(false);
+          // Start loading 10 more pages in the background
+          fetchRelevantMovieTitlesFromTMDB(15).then(bgTitles => {
+            if (mounted) setTmdbTitles(bgTitles);
+          });
+        }
+      })
       .catch(e => { if (mounted) { setError('Failed to fetch TMDB movies'); setLoading(false); } });
     return () => { mounted = false; };
   }, []);
@@ -96,6 +111,9 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
   const [swipeHistory, setSwipeHistory] = useState<number[]>([]);
   type SortBy = 'rating' | 'year' | 'title' | 'popularity' | 'duration' | 'random';
   const [sortBy, setSortBy] = useState<SortBy>('rating');
+  const [randomOrder, setRandomOrder] = useState<number[]>([]);
+  // Trigger counter to tell sidebar to auto-apply when sort changes
+  const [autoApplyCounter, setAutoApplyCounter] = useState(0);
 
   // Filter movies by selected genres, language, year, and rating range
   let filteredMovies = moviesToUse.filter((m) => {
@@ -124,17 +142,41 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
 
   // Sort movies
   filteredMovies = [...filteredMovies];
-  if (sortBy === 'rating') filteredMovies.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-  else if (sortBy === 'year') filteredMovies.sort((a, b) => (b.year || 0) - (a.year || 0));
-  else if (sortBy === 'title') filteredMovies.sort((a, b) => a.title.localeCompare(b.title));
-  else if (sortBy === 'popularity') filteredMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-  else if (sortBy === 'duration') filteredMovies.sort((a, b) => (b.duration || 0) - (a.duration || 0));
-  else if (sortBy === 'random') filteredMovies.sort(() => Math.random() - 0.5);
+  if (sortBy === 'rating') {
+    filteredMovies.sort((a, b) => sortOrder === 'desc' ? (b.rating || 0) - (a.rating || 0) : (a.rating || 0) - (b.rating || 0));
+  } else if (sortBy === 'year') {
+    filteredMovies.sort((a, b) => sortOrder === 'desc' ? (b.year || 0) - (a.year || 0) : (a.year || 0) - (b.year || 0));
+  } else if (sortBy === 'title') {
+    filteredMovies.sort((a, b) => sortOrder === 'desc' ? b.title.localeCompare(a.title) : a.title.localeCompare(b.title));
+  } else if (sortBy === 'popularity') {
+    filteredMovies.sort((a, b) => sortOrder === 'desc' ? (b.popularity || 0) - (a.popularity || 0) : (a.popularity || 0) - (b.popularity || 0));
+  } else if (sortBy === 'duration') {
+    filteredMovies.sort((a, b) => sortOrder === 'desc' ? (b.duration || 0) - (a.duration || 0) : (a.duration || 0) - (b.duration || 0));
+  }
+  else if (sortBy === 'random') {
+    // Shuffle only once per random selection
+    if (randomOrder.length !== filteredMovies.length) {
+      // Generate a new random order
+      const indices = filteredMovies.map((_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      setRandomOrder(indices);
+    }
+    filteredMovies = randomOrder.map(i => filteredMovies[i]).filter(Boolean);
+  } else if (randomOrder.length) {
+    setRandomOrder([]); // Reset random order if not in random mode
+  }
 
   const currentMovie = filteredMovies[currentMovieIndex] as Movie;
 
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen text-xl">Loading relevant movies...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="animate-spin w-12 h-12 text-primary" />
+      </div>
+    );
   }
   if (error) {
     return <div className="flex items-center justify-center min-h-screen text-xl text-red-500">{error}</div>;
@@ -224,56 +266,135 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
   return (
     <div className="min-h-screen flex">
       {/* Sidebar for desktop */}
-      <FilterSidebar
-        genres={allGenres}
-        selectedGenres={selectedGenres}
-        onGenreChange={setSelectedGenres}
-        yearRange={[minYear, maxYear]}
-        selectedYearRange={selectedYearRange}
-        onYearRangeChange={setSelectedYearRange}
-        ratingRange={[0, 10]}
-        selectedRatingRange={selectedRatingRange}
-        onRatingRangeChange={setSelectedRatingRange}
-        languages={allLanguages}
-        selectedLanguage={selectedLanguage}
-        onLanguageChange={setSelectedLanguage}
-        sortBy={sortBy}
-        onSortByChange={(s) => setSortBy(s as SortBy)}
-        onReset={() => {
-          setSelectedGenres(allGenres);
-          setSelectedYearRange([DEFAULT_MIN_YEAR, new Date().getFullYear()]);
-          setSelectedRatingRange([DEFAULT_MIN_RATING, 10]);
-          setSelectedLanguage('en');
-        }}
-      />
+      {/* Filter Sidebar Modal and Overlay */}
+      <button
+        className="fixed top-6 left-6 z-30 bg-primary text-white px-5 py-2 rounded-full shadow-lg font-bold hover:bg-primary/90 transition-all md:static md:ml-0 md:mt-0 md:relative"
+        onClick={() => setSidebarOpen(true)}
+        style={{ display: sidebarOpen ? 'none' : undefined }}
+      >
+        Filter
+      </button>
+      {sidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black bg-opacity-60 z-40 transition-opacity duration-300"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <aside
+            className="fixed top-0 left-0 h-full w-96 max-w-full bg-zinc-900 text-white z-50 shadow-2xl rounded-r-2xl p-8 transition-transform duration-300 transform translate-x-0 overflow-y-auto"
+            style={{ borderTopRightRadius: '1.5rem', borderBottomRightRadius: '1.5rem' }}
+          >
+            <button
+              className="absolute top-4 right-4 text-2xl text-white hover:text-primary"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
+            >
+              ×
+            </button>
+            <FilterSidebar
+              genres={allGenres}
+              selectedGenres={selectedGenres}
+              onGenreChange={setSelectedGenres}
+              yearRange={[minYear, maxYear]}
+              selectedYearRange={selectedYearRange}
+              onYearRangeChange={setSelectedYearRange}
+              ratingRange={[0, 10]}
+              selectedRatingRange={selectedRatingRange}
+              onRatingRangeChange={setSelectedRatingRange}
+              languages={allLanguages}
+              selectedLanguage={selectedLanguage}
+              onLanguageChange={setSelectedLanguage}
+              sortBy={sortBy}
+              onSortByChange={(sort) => { setSortBy(sort as SortBy); setAutoApplyCounter(c => c + 1); }}
+              autoApplyTrigger={autoApplyCounter}
+              onReset={() => {
+                setSelectedGenres(allGenres);
+                setSelectedYearRange([DEFAULT_MIN_YEAR, new Date().getFullYear()]);
+                setSelectedRatingRange([DEFAULT_MIN_RATING, 10]);
+                setSelectedLanguage('en');
+              }}
+            />
+          </aside>
+        </>
+      )}
       {/* Main content */}
       <div className="flex-1 p-6">
 
 
-        {/* Header */}
-        <div className="max-w-md mx-auto mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-center">Room: {roomCode}</h2>
-              <div className="flex justify-center">
-                <p className="text-sm text-muted-foreground flex items-center gap-1 text-left max-w-xs mx-auto">
-                  <Users className="w-4 h-4" />
-                  {users.length} members
-                </p>
+        {/* Header and Sort By */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between max-w-5xl mx-auto mb-6">
+          <div>
+            <h2 className="text-xl font-bold">Room: {roomCode}</h2>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+              <Users className="w-4 h-4" />
+              {users.length} members
+            </div>
+          </div>
+          <div className="flex items-center gap-4 mt-4 md:mt-0">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold">Sort by:</span>
+              <div className="flex gap-1 bg-zinc-800 rounded-full p-1 shadow-inner">
+                {[
+                  { value: 'random', label: 'Random', toggle: false },
+                  { value: 'rating', label: 'Rating', toggle: true },
+                  { value: 'year', label: 'Year', toggle: true },
+                  { value: 'popularity', label: 'Popularity', toggle: true },
+                ].map(opt => (
+                  <div key={opt.value} className="relative flex items-center">
+                    <button
+                      type="button"
+                      className={`px-3 py-1 rounded-full text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/70 flex items-center gap-1
+                        ${sortBy === opt.value
+                          ? 'bg-primary text-white shadow-lg scale-105'
+                          : 'bg-zinc-700 text-zinc-200 hover:bg-zinc-600 hover:text-white'}`}
+                      onClick={() => {
+                        setSortBy(opt.value as SortBy);
+                        if (opt.value === 'random') setRandomOrder([]);
+                      }}
+                      aria-pressed={sortBy === opt.value}
+                    >
+                      {opt.label}
+                    </button>
+                    {opt.toggle && sortBy === opt.value && (
+                      <button
+                        type="button"
+                        className="ml-1 p-1 rounded-full bg-zinc-700 hover:bg-zinc-600 text-zinc-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary/70 transition-all duration-150"
+                        title={sortOrder === 'desc' ? 'High → Low' : 'Low → High'}
+                        onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+                      >
+                        <span className="inline-block align-middle">
+                          {sortOrder === 'desc' ? (
+                            <svg width="16" height="16" fill="none" viewBox="0 0 16 16"><path d="M8 11l4-4H4l4 4z" fill="currentColor"/></svg>
+                          ) : (
+                            <svg width="16" height="16" fill="none" viewBox="0 0 16 16"><path d="M8 5l4 4H4l4-4z" fill="currentColor"/></svg>
+                          )}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
+              <button
+                className="bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/70 active:scale-95 transition-all duration-150 shadow-md"
+                onClick={() => {
+                  // Apply the current sort and trigger re-filtering
+                  setCurrentMovieIndex(0);
+                  if (sortBy === 'random') setRandomOrder([]);
+                }}
+              >
+                Apply
+              </button>
             </div>
-            <div className="flex gap-2">
-              {matches.length > 0 && (
-                <Button 
-                  variant="match" 
-                  size="sm"
-                  onClick={() => setShowMatches(true)}
-                >
-                  <Trophy className="w-4 h-4 mr-1" />
-                  {matches.length}
-                </Button>
-              )}
-            </div>
+            {matches.length > 0 && (
+              <Button 
+                variant="match" 
+                size="sm"
+                onClick={() => setShowMatches(true)}
+              >
+                <Trophy className="w-4 h-4 mr-1" />
+                {matches.length}
+              </Button>
+            )}
           </div>
         </div>
 
