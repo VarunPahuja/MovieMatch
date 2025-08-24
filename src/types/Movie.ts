@@ -18,7 +18,7 @@ export interface Room {
   code: string;
   name: string;
   createdAt: Date;
-  users: RoomUser[];
+  users: Record<string, RoomUser>; // Changed from RoomUser[] to Record<string, RoomUser> for Firebase compatibility
   currentMovieIndex: number;
   matches: MovieMatch[];
 }

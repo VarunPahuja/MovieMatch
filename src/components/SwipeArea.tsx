@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Shuffle, Users, Trophy, Heart, X } from 'lucide-react';
-import { Movie, MovieMatch, RoomUser } from '@/types/Movie';
+import { Shuffle, Users, Trophy, Heart, X, Activity } from 'lucide-react';
+import { Movie, MovieMatch, RoomUser, MovieSwipe } from '@/types/Movie';
 import { MovieCard } from './MovieCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { MatchesPage } from './MatchesPage';
 
 import moviesData from '@/data/clean_movies.json';
 import { fetchRelevantMovieTitlesFromTMDB, filterMoviesByTMDBTitles } from '@/lib/tmdbFilter';
@@ -29,10 +30,30 @@ interface SwipeAreaProps {
   language: string;
   yearRange: [number, number];
   ratingRange: [number, number];
+  // New optional props for real-time features
+  realTimeSwipes?: MovieSwipe[];
+  currentUser?: RoomUser;
+  connected?: boolean;
+  onLeaveRoom?: () => void;
 }
 
-export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genres, language, yearRange, ratingRange }: SwipeAreaProps) {
+export function SwipeArea({ 
+  roomCode, 
+  users, 
+  matches, 
+  onSwipe, 
+  onNewMatch, 
+  genres, 
+  language, 
+  yearRange, 
+  ratingRange,
+  realTimeSwipes = [],
+  currentUser,
+  connected = true,
+  onLeaveRoom
+}: SwipeAreaProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showLiveActivity, setShowLiveActivity] = useState(false);
   // State for TMDB-filtered movies
   const [tmdbTitles, setTmdbTitles] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,6 +229,42 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
     }
   };
 
+  // Helper function to get user name by ID
+  const getUserName = (userId: string): string => {
+    const user = users.find(u => u.id === userId);
+    return user?.name || 'Unknown User';
+  };
+
+  // Helper function to get movie title by ID
+  const getMovieTitle = (movieId: number): string => {
+    const movie = moviesToUse.find(m => m.id === movieId);
+    return movie?.title || 'Unknown Movie';
+  };
+
+  // Helper function to format time ago
+  const formatTimeAgo = (timestamp: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - timestamp.getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+    
+    if (diffSeconds < 60) return `${diffSeconds}s ago`;
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    return `${diffHours}h ago`;
+  };
+
+  // Get recent swipes for current movie
+  const currentMovieSwipes = realTimeSwipes
+    .filter(swipe => swipe.movieId === currentMovie?.id)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  // Get recent swipes for activity feed (last 5)
+  const recentSwipes = realTimeSwipes
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 5);
+
+  // Next movies for preview
   const nextMovies = filteredMovies.slice(currentMovieIndex + 1, currentMovieIndex + 3) as Movie[];
 
   if (showMatches) {
@@ -324,10 +381,30 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
         {/* Header and Sort By */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between max-w-5xl mx-auto mb-6">
           <div>
-            <h2 className="text-xl font-bold">Room: {roomCode}</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold">Room: {roomCode}</h2>
+              {/* Connection Status Indicator */}
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'} ${connected ? 'animate-pulse' : ''}`} />
+                <span className="text-sm text-muted-foreground">
+                  {connected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              {/* Leave Room Button */}
+              {onLeaveRoom && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={onLeaveRoom}
+                  className="ml-2"
+                >
+                  Leave Room
+                </Button>
+              )}
+            </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
               <Users className="w-4 h-4" />
-              {users.length} members
+              {users.length} members online
             </div>
           </div>
           <div className="flex items-center gap-4 mt-4 md:mt-0">
@@ -385,18 +462,52 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
                 Apply
               </button>
             </div>
+            
+            {/* Matches Button - Next to Sort Controls */}
             {matches.length > 0 && (
               <Button 
-                variant="match" 
-                size="sm"
                 onClick={() => setShowMatches(true)}
+                className="bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white px-4 py-2 rounded-full font-semibold shadow-lg transition-all duration-150 flex items-center gap-2"
               >
-                <Trophy className="w-4 h-4 mr-1" />
-                {matches.length}
+                <Trophy className="w-4 h-4" />
+                <span>{matches.length} Match{matches.length !== 1 ? 'es' : ''}</span>
               </Button>
             )}
+            
+            {/* Test Matches Button - For debugging */}
+            <Button 
+              onClick={() => setShowMatches(true)}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-full font-semibold shadow-lg transition-all duration-150 flex items-center gap-2"
+            >
+              <Trophy className="w-4 h-4" />
+              <span>Test Matches Page</span>
+            </Button>
           </div>
         </div>
+
+        {/* Current Movie Swipe Status - Compact version */}
+        {currentMovie && currentMovieSwipes.length > 0 && (
+          <div className="max-w-5xl mx-auto mb-4">
+            <div className="flex items-center justify-center gap-2 bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border">
+              <Heart className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium text-green-800">"{currentMovie.title}":</span>
+              <div className="flex gap-1">
+                {currentMovieSwipes.map((swipe, index) => (
+                  <span 
+                    key={`${swipe.userId}-${index}`}
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      swipe.liked 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {swipe.liked ? '❤️' : '💔'} {getUserName(swipe.userId)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Movie Display - Optimized Container */}
         <div className="flex-1 flex items-center justify-center px-4 py-8">
@@ -434,6 +545,81 @@ export function SwipeArea({ roomCode, users, matches, onSwipe, onNewMatch, genre
           </p>
         </div>
       </div>
+
+      {/* Floating Activity Button - Bottom Right */}
+      {realTimeSwipes.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-40">
+          <Button
+            onClick={() => setShowLiveActivity(true)}
+            className="rounded-full w-14 h-14 bg-blue-600 hover:bg-blue-700 shadow-lg border-2 border-white"
+            size="icon"
+          >
+            <div className="relative">
+              <Activity className="w-6 h-6 text-white" />
+              {recentSwipes.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+                  {recentSwipes.length}
+                </span>
+              )}
+            </div>
+          </Button>
+        </div>
+      )}
+
+      {/* Live Activity Modal */}
+      {showLiveActivity && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md max-h-[80vh] overflow-hidden">
+            <CardContent className="p-0">
+              <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-5 h-5" />
+                    <h3 className="font-bold">🔴 Live Activity</h3>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowLiveActivity(false)}
+                    className="text-white hover:bg-white/20"
+                  >
+                    ✕
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4 max-h-96 overflow-y-auto">
+                {recentSwipes.length > 0 ? (
+                  <div className="space-y-3">
+                    {recentSwipes.map((swipe, index) => (
+                      <div key={`${swipe.userId}-${swipe.movieId}-${swipe.timestamp}`} className="flex items-center gap-3 p-2 rounded-lg bg-gray-50">
+                        <span className="text-2xl">{swipe.liked ? '❤️' : '💔'}</span>
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-800">{getUserName(swipe.userId)}</div>
+                          <div className="text-sm text-gray-600">
+                            {swipe.liked ? 'liked' : 'disliked'} <span className="font-medium">"{getMovieTitle(swipe.movieId)}"</span>
+                          </div>
+                          <div className="text-xs text-gray-500">{formatTimeAgo(new Date(swipe.timestamp))}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-600 text-center py-8">No activity yet. Start swiping!</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Matches Page */}
+      {showMatches && (
+        <MatchesPage 
+          matches={matches}
+          users={users}
+          onClose={() => setShowMatches(false)}
+        />
+      )}
     </div>
   );
 }

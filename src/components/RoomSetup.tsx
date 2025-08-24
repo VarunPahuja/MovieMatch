@@ -6,19 +6,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 
 interface RoomSetupProps {
-  onCreateRoom: (roomName: string) => void;
+  onCreateRoom: (roomName: string, userName: string) => void;
   onJoinRoom: (roomCode: string, userName: string) => void;
+  loading?: boolean;
 }
 
-export function RoomSetup({ onCreateRoom, onJoinRoom }: RoomSetupProps) {
+export function RoomSetup({ onCreateRoom, onJoinRoom, loading }: RoomSetupProps) {
   const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
   const [roomName, setRoomName] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [userName, setUserName] = useState('');
+  const [creatorName, setCreatorName] = useState('');
 
   const handleCreateRoom = () => {
-    if (roomName.trim()) {
-      onCreateRoom(roomName.trim());
+    if (roomName.trim() && creatorName.trim()) {
+      onCreateRoom(roomName.trim(), creatorName.trim());
     }
   };
 
@@ -100,6 +102,16 @@ export function RoomSetup({ onCreateRoom, onJoinRoom }: RoomSetupProps) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
+              <Label htmlFor="creator-name">Your Name</Label>
+              <Input
+                id="creator-name"
+                placeholder="Enter your name"
+                value={creatorName}
+                onChange={(e) => setCreatorName(e.target.value)}
+              />
+            </div>
+            
+            <div className="space-y-2">
               <Label htmlFor="room-name">Room Name</Label>
               <Input
                 id="room-name"
@@ -121,10 +133,10 @@ export function RoomSetup({ onCreateRoom, onJoinRoom }: RoomSetupProps) {
               <Button 
                 variant="movie" 
                 onClick={handleCreateRoom}
-                disabled={!roomName.trim()}
+                disabled={!roomName.trim() || !creatorName.trim() || loading}
                 className="flex-1"
               >
-                Create Room
+                {loading ? 'Creating...' : 'Create Room'}
               </Button>
             </div>
           </CardContent>
@@ -179,10 +191,10 @@ export function RoomSetup({ onCreateRoom, onJoinRoom }: RoomSetupProps) {
             <Button 
               variant="movie" 
               onClick={handleJoinRoom}
-              disabled={!roomCode.trim() || !userName.trim()}
+              disabled={!roomCode.trim() || !userName.trim() || loading}
               className="flex-1"
             >
-              Join Room
+              {loading ? 'Joining...' : 'Join Room'}
             </Button>
           </div>
         </CardContent>

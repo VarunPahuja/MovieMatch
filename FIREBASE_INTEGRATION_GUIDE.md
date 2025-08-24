@@ -12,7 +12,7 @@
 2. **RoomSetup** → Real Firebase room creation/joining
 3. **SwipeArea** → Real-time collaborative swiping
 
----
+---. 
 
 ## 🔧 Integration Plan
 
