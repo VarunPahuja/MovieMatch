@@ -5,6 +5,8 @@ import { MovieCard } from './MovieCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { MatchesPage } from './MatchesPage';
+import { Logo } from './Logo';
+import { ProgressBar } from './ProgressBar';
 
 import moviesData from '@/data/clean_movies.json';
 import { fetchRelevantMovieTitlesFromTMDB, filterMoviesByTMDBTitles } from '@/lib/tmdbFilter';
@@ -378,39 +380,65 @@ export function SwipeArea({
       <div className="flex-1 p-6">
 
 
-        {/* Header and Sort By */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between max-w-5xl mx-auto mb-6">
-          <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold">Room: {roomCode}</h2>
-              {/* Connection Status Indicator */}
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'} ${connected ? 'animate-pulse' : ''}`} />
-                <span className="text-sm text-muted-foreground">
-                  {connected ? 'Connected' : 'Disconnected'}
-                </span>
+        {/* Header with Logo and Sort By */}
+        <div className="max-w-6xl mx-auto mb-8 space-y-6">
+          {/* Top Row: Logo and Room Info */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-8">
+              {/* Logo */}
+              <Logo />
+              
+              {/* Room Info */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-xl font-bold">Room: {roomCode}</h2>
+                  {/* Connection Status */}
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'} ${connected ? 'animate-pulse' : ''}`} />
+                    <span className="text-sm text-muted-foreground">
+                      {connected ? 'Connected' : 'Disconnected'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Users className="w-4 h-4" />
+                  {users.length} members online
+                </div>
               </div>
+            </div>
+
+            {/* Top Right: Leave Room & Matches */}
+            <div className="flex items-center gap-4">
               {/* Leave Room Button */}
               {onLeaveRoom && (
                 <Button 
                   variant="outline" 
                   size="sm" 
                   onClick={onLeaveRoom}
-                  className="ml-2"
+                  className="btn-pill"
                 >
                   Leave Room
                 </Button>
               )}
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-              <Users className="w-4 h-4" />
-              {users.length} members online
+              
+              {/* Matches Button */}
+              {matches.length > 0 && (
+                <Button 
+                  onClick={() => setShowMatches(true)}
+                  className="bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white btn-pill font-semibold shadow-lg transition-all duration-150 flex items-center gap-2"
+                >
+                  <Trophy className="w-4 h-4" />
+                  <span>{matches.length} Match{matches.length !== 1 ? 'es' : ''}</span>
+                </Button>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-4 mt-4 md:mt-0">
+
+          {/* Bottom Row: Sort Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-center gap-4">
+            <span className="font-semibold text-lg">Sort by:</span>
             <div className="flex items-center gap-3">
-              <span className="font-semibold">Sort by:</span>
-              <div className="flex gap-1 bg-zinc-800 rounded-full p-1 shadow-inner">
+              <div className="flex gap-2 bg-zinc-800 rounded-full p-1 shadow-inner">
                 {[
                   { value: 'random', label: 'Random', toggle: false },
                   { value: 'rating', label: 'Rating', toggle: true },
@@ -420,7 +448,7 @@ export function SwipeArea({
                   <div key={opt.value} className="relative flex items-center">
                     <button
                       type="button"
-                      className={`px-3 py-1 rounded-full text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/70 flex items-center gap-1
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/70 flex items-center gap-1
                         ${sortBy === opt.value
                           ? 'bg-primary text-white shadow-lg scale-105'
                           : 'bg-zinc-700 text-zinc-200 hover:bg-zinc-600 hover:text-white'}`}
@@ -435,7 +463,7 @@ export function SwipeArea({
                     {opt.toggle && sortBy === opt.value && (
                       <button
                         type="button"
-                        className="ml-1 p-1 rounded-full bg-zinc-700 hover:bg-zinc-600 text-zinc-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary/70 transition-all duration-150"
+                        className="ml-2 p-1 rounded-full bg-zinc-700 hover:bg-zinc-600 text-zinc-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary/70 transition-all duration-150"
                         title={sortOrder === 'desc' ? 'High → Low' : 'Low → High'}
                         onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
                       >
@@ -451,10 +479,10 @@ export function SwipeArea({
                   </div>
                 ))}
               </div>
+              
               <button
-                className="bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/70 active:scale-95 transition-all duration-150 shadow-md"
+                className="bg-primary text-white px-6 py-2 rounded-full text-sm font-semibold hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/70 active:scale-95 transition-all duration-150 shadow-md"
                 onClick={() => {
-                  // Apply the current sort and trigger re-filtering
                   setCurrentMovieIndex(0);
                   if (sortBy === 'random') setRandomOrder([]);
                 }}
@@ -462,26 +490,6 @@ export function SwipeArea({
                 Apply
               </button>
             </div>
-            
-            {/* Matches Button - Next to Sort Controls */}
-            {matches.length > 0 && (
-              <Button 
-                onClick={() => setShowMatches(true)}
-                className="bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white px-4 py-2 rounded-full font-semibold shadow-lg transition-all duration-150 flex items-center gap-2"
-              >
-                <Trophy className="w-4 h-4" />
-                <span>{matches.length} Match{matches.length !== 1 ? 'es' : ''}</span>
-              </Button>
-            )}
-            
-            {/* Test Matches Button - For debugging */}
-            <Button 
-              onClick={() => setShowMatches(true)}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-full font-semibold shadow-lg transition-all duration-150 flex items-center gap-2"
-            >
-              <Trophy className="w-4 h-4" />
-              <span>Test Matches Page</span>
-            </Button>
           </div>
         </div>
 
@@ -524,25 +532,12 @@ export function SwipeArea({
           </div>
         </div>
 
-        {/* Progress */}
+        {/* Progress Bar */}
         <div className="max-w-md mx-auto mt-6">
-          <div className="flex justify-center gap-1">
-            {filteredMovies.slice(0, 10).map((_, index) => (
-              <div
-                key={index}
-                className={`h-2 w-8 rounded-full transition-colors duration-300 ${
-                  index < currentMovieIndex 
-                    ? 'bg-primary' 
-                    : index === currentMovieIndex 
-                    ? 'bg-primary/60' 
-                    : 'bg-muted'
-                }`}
-              />
-            ))}
-          </div>
-          <p className="text-center text-sm text-muted-foreground mt-2">
-            Movie {currentMovieIndex + 1} of {filteredMovies.length}
-          </p>
+          <ProgressBar 
+            current={currentMovieIndex + 1} 
+            total={filteredMovies.length} 
+          />
         </div>
       </div>
 

@@ -1,12 +1,15 @@
 
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import StartScreen from '@/components/StartScreen';
 import { RoomSetup } from '@/components/RoomSetup';
 import { SwipeArea } from '@/components/SwipeArea';
 import { Movie, Room, RoomUser, MovieMatch, MovieSwipe } from '@/types/Movie';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebaseRoom, useFirebaseUser } from '@/hooks/useFirebase';
+import { v4 as uuidv4 } from 'uuid';
+import { ref, set, onValue } from 'firebase/database';
+import { database } from '@/config/firebase';
 
 
 
@@ -14,7 +17,15 @@ import { useFirebaseRoom, useFirebaseUser } from '@/hooks/useFirebase';
 const Index = () => {
   const [showStart, setShowStart] = useState(true);
   const [useFirebase, setUseFirebase] = useState(true); // Feature flag for testing
+  const [testMode, setTestMode] = useState(false); // Simple button test mode
   const { toast } = useToast();
+
+  // Simple test mode state
+  const [testUserId, setTestUserId] = useState('');
+  const [testLikes, setTestLikes] = useState<{ [key: string]: number[] }>({});
+  const [testCommon, setTestCommon] = useState<number[]>([]);
+  const TEST_BUTTONS = [1, 2, 3, 4];
+  const TEST_ROOM = 'main-test-room';
 
   // Firebase state
   const [roomCode, setRoomCode] = useState<string | undefined>();
@@ -37,6 +48,66 @@ const Index = () => {
   const [localMatches, setLocalMatches] = useState<MovieMatch[]>([]);
   const [localSwipes, setLocalSwipes] = useState<MovieSwipe[]>([]);
 
+  // Initialize test user ID
+  useEffect(() => {
+    let id = localStorage.getItem('mainTestUserId');
+    if (!id) {
+      id = uuidv4();
+      localStorage.setItem('mainTestUserId', id);
+    }
+    setTestUserId(id);
+  }, []);
+
+  // Listen for test mode likes
+  useEffect(() => {
+    if (!testMode) return;
+    
+    const likesRef = ref(database, `mainTestRoom/${TEST_ROOM}/likes`);
+    return onValue(likesRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setTestLikes(data);
+      
+      // Find common likes
+      const buttonCounts: { [key: string]: number } = {};
+      Object.values(data).forEach((userLikes) => {
+        (userLikes ? (userLikes as number[]) : []).forEach((btn: number) => {
+          buttonCounts[btn] = (buttonCounts[btn] || 0) + 1;
+        });
+      });
+      
+      const commonButtons = Object.entries(buttonCounts)
+        .filter(([_, count]) => count > 1)
+        .map(([btn]) => Number(btn));
+      setTestCommon(commonButtons);
+      
+      // Show toast for new matches
+      commonButtons.forEach(btn => {
+        if (!testCommon.includes(btn)) {
+          toast({
+            title: "🎉 Test Match!",
+            description: `Button ${btn} is liked by multiple users!`,
+            variant: "default"
+          });
+        }
+      });
+    });
+  }, [testMode, testCommon, toast]);
+
+  // Handle test button likes
+  const handleTestLike = async (btn: number) => {
+    if (!testUserId) return;
+    
+    const userLikes = testLikes[testUserId] || [];
+    if (!userLikes.includes(btn)) {
+      const newLikes = [...userLikes, btn];
+      await set(ref(database, `mainTestRoom/${TEST_ROOM}/likes/${testUserId}`), newLikes);
+      
+      toast({
+        title: "Button Liked! ❤️",
+        description: `You liked button ${btn}`,
+      });
+    }
+  };
   // Firebase room creation
   const handleCreateRoomFirebase = async (roomName: string, userName: string) => {
     try {
@@ -178,12 +249,10 @@ const Index = () => {
     try {
       await recordSwipe(newSwipe);
       
-      // Check for matches if this was a like
+      // Check for matches immediately if this was a like
       if (liked && room) {
-        // Wait a bit for Firebase to sync the new swipe
-        setTimeout(async () => {
-          await checkForMatches(movieId);
-        }, 1000);
+        // Check for matches right after recording the swipe
+        await checkForMatches(movieId);
       }
       
       if (liked) {
@@ -193,6 +262,7 @@ const Index = () => {
         });
       }
     } catch (err) {
+      console.error('Failed to record swipe:', err);
       toast({
         title: "Error",
         description: "Failed to record swipe. Please try again.",
@@ -214,7 +284,7 @@ const Index = () => {
   };
 
   // Helper function to add match to Firebase
-  const addMatchToFirebase = async (match: MovieMatch) => {
+  const addMatchToFirebase = useCallback(async (match: MovieMatch) => {
     if (!roomCode) return;
     
     try {
@@ -223,10 +293,10 @@ const Index = () => {
     } catch (err) {
       console.error('Failed to add match to Firebase:', err);
     }
-  };
+  }, [roomCode]);
 
   // Check if a movie has enough likes to be a match
-  const checkForMatches = async (movieId: number) => {
+  const checkForMatches = useCallback(async (movieId: number) => {
     if (!room || !roomCode) return;
 
     // Get all swipes for this movie
@@ -266,7 +336,24 @@ const Index = () => {
         }
       }
     }
-  };
+  }, [room, roomCode, swipes, matches, toast, addMatchToFirebase]);
+
+  // Check for matches whenever swipes update
+  useEffect(() => {
+    if (!useFirebase || !room || !roomCode || swipes.length === 0) return;
+    
+    const checkAllMatches = async () => {
+      // Get all movies that have been liked
+      const likedMovies = swipes.filter(swipe => swipe.liked);
+      const uniqueMovieIds = [...new Set(likedMovies.map(swipe => swipe.movieId))];
+      
+      for (const movieId of uniqueMovieIds) {
+        await checkForMatches(movieId);
+      }
+    };
+    
+    checkAllMatches();
+  }, [swipes, room, roomCode, useFirebase, checkForMatches]);
 
   // Legacy local swipe handler
   const handleSwipeLocal = (movieId: number, liked: boolean) => {
@@ -332,15 +419,63 @@ const Index = () => {
   if (showStart) {
     return (
       <div>
-        <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4 flex gap-2">
+          <button 
+            onClick={() => setTestMode(!testMode)}
+            className="btn-pill bg-purple-600/90 hover:bg-purple-700 text-white px-4 py-2 text-sm font-medium backdrop-blur-sm border border-purple-500/30"
+          >
+            {testMode ? '🧪 Test Mode' : '🎬 Movie Mode'}
+          </button>
           <button 
             onClick={() => setUseFirebase(!useFirebase)}
-            className="px-3 py-1 text-xs bg-white/10 text-white rounded-md hover:bg-white/20 transition-colors"
+            className="btn-pill bg-white/10 hover:bg-white/20 text-white px-4 py-2 text-sm font-medium backdrop-blur-md border border-white/20"
           >
             {useFirebase ? '🔥 Firebase Mode' : '💻 Local Mode'}
           </button>
         </div>
-        <StartScreen onContinue={() => setShowStart(false)} />
+        {testMode ? (
+          <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 max-w-lg w-full text-white">
+              <h1 className="text-3xl font-bold mb-6 text-center">Firebase Test Mode</h1>
+              <p className="text-center mb-6 text-white/80">Test collaborative liking with simple buttons</p>
+              
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                {TEST_BUTTONS.map((btn) => (
+                  <button
+                    key={btn}
+                    onClick={() => handleTestLike(btn)}
+                    className={`btn-pill ${
+                      testCommon.includes(btn) 
+                        ? 'btn-like transform scale-105' 
+                        : 'btn-pass hover:scale-105'
+                    } px-8 py-6 text-2xl font-bold min-w-[120px] transition-all duration-200`}
+                  >
+                    {btn}
+                  </button>
+                ))}
+              </div>
+              
+              {testCommon.length > 0 && (
+                <div className="bg-green-500/20 border border-green-500/50 rounded-xl p-4 backdrop-blur-sm">
+                  <h2 className="font-semibold mb-3 text-green-300">🎉 Common Liked Buttons:</h2>
+                  <div className="flex gap-2 flex-wrap justify-center">
+                    {testCommon.map((btn) => (
+                      <span key={btn} className="btn-pill btn-like px-6 py-3 font-bold text-lg min-w-[60px] text-center">
+                        {btn}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div className="mt-6 text-center">
+                <p className="text-sm text-white/60">Open this page in multiple browsers to test collaborative features</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <StartScreen onContinue={() => setShowStart(false)} />
+        )}
       </div>
     );
   }

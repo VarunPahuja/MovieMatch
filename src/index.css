@@ -60,47 +60,32 @@
     --transition-bounce: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-
     --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 11.2%;
-
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
-
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
-
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
@@ -122,5 +107,51 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+}
+
+/* Custom Cinema Components */
+@layer components {
+  .movie-title {
+    @apply text-2xl md:text-3xl lg:text-4xl font-bold text-white tracking-tight;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  
+  .movie-description {
+    @apply text-base md:text-lg text-gray-300 leading-relaxed;
+    font-weight: 400;
+  }
+  
+  .movie-meta {
+    @apply text-sm text-gray-400 font-medium;
+  }
+  
+  .btn-pill {
+    @apply px-8 py-4 rounded-full font-semibold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg;
+  }
+  
+  .btn-pass {
+    @apply bg-gray-700 hover:bg-red-600 text-white border-2 border-gray-600 hover:border-red-500;
+  }
+  
+  .btn-like {
+    @apply bg-green-600 hover:bg-green-500 text-white border-2 border-green-500 hover:border-green-400 shadow-green-500/25;
+  }
+  
+  .progress-bar {
+    @apply bg-gray-800 rounded-full overflow-hidden shadow-inner;
+  }
+  
+  .progress-fill {
+    @apply bg-gradient-to-r from-red-600 to-red-500 h-full rounded-full transition-all duration-500 ease-out;
+  }
+  
+  .logo-text {
+    @apply text-2xl md:text-3xl font-bold bg-gradient-to-r from-red-500 to-red-400 bg-clip-text text-transparent;
+    font-weight: 800;
+    letter-spacing: -0.025em;
   }
 }
