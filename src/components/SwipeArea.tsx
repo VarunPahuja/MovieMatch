@@ -11,7 +11,6 @@ import { ProgressBar } from './ProgressBar';
 import moviesData from '@/data/clean_movies.json';
 import { fetchRelevantMovieTitlesFromTMDB, filterMoviesByTMDBTitles } from '@/lib/tmdbFilter';
 import { Loader2 } from 'lucide-react';
-import { FilterSidebar } from './FilterSidebar';
 
 
 
@@ -54,7 +53,6 @@ export function SwipeArea({
   connected = true,
   onLeaveRoom
 }: SwipeAreaProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLiveActivity, setShowLiveActivity] = useState(false);
   // State for TMDB-filtered movies
   const [tmdbTitles, setTmdbTitles] = useState<string[] | null>(null);
@@ -90,31 +88,6 @@ export function SwipeArea({
   // Use filtered movies for all further logic
   const moviesToUse = tmdbTitles ? filteredByTMDB : movies;
 
-  // Gather all genres and languages from moviesToUse
-  const allGenres = useMemo(() => {
-    const set = new Set<string>();
-    moviesToUse.forEach(m => {
-      if (Array.isArray(m.genre)) m.genre.forEach(g => set.add(g));
-      else if (typeof m.genre === 'string') set.add(m.genre);
-    });
-    return Array.from(set).sort();
-  }, [moviesToUse]);
-  const allLanguages = useMemo(() => {
-    const set = new Set<string>();
-    moviesToUse.forEach(m => {
-      if ('language' in m && m.language) set.add(m.language);
-    });
-    return Array.from(set).sort();
-  }, [moviesToUse]);
-  const minYear = useMemo(() => Math.min(...moviesToUse.map(m => m.year)), [moviesToUse]);
-  const maxYear = useMemo(() => Math.max(...moviesToUse.map(m => m.year)), [moviesToUse]);
-
-  // Local filter state
-  const [selectedGenres, setSelectedGenres] = useState<string[]>(allGenres);
-  const [selectedYearRange, setSelectedYearRange] = useState<[number, number]>([DEFAULT_MIN_YEAR, new Date().getFullYear()]);
-  const [selectedRatingRange, setSelectedRatingRange] = useState<[number, number]>([DEFAULT_MIN_RATING, 10]);
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
-
   // Responsive layout detection
   const [layout, setLayout] = useState<'landscape' | 'portrait'>('portrait');
   useEffect(() => {
@@ -135,31 +108,48 @@ export function SwipeArea({
   type SortBy = 'rating' | 'year' | 'title' | 'popularity' | 'duration' | 'random';
   const [sortBy, setSortBy] = useState<SortBy>('rating');
   const [randomOrder, setRandomOrder] = useState<number[]>([]);
-  // Trigger counter to tell sidebar to auto-apply when sort changes
-  const [autoApplyCounter, setAutoApplyCounter] = useState(0);
+  // Track previous filtered movies length to detect changes
+  const [prevFilteredLength, setPrevFilteredLength] = useState(0);
+  
+  // Navigation state for progress tracking and back functionality
+  const [startingMovieIndex, setStartingMovieIndex] = useState(0);
+  const [visitedMovies, setVisitedMovies] = useState<number[]>([]);
+  const [currentPosition, setCurrentPosition] = useState(0); // Position in visited array
+
+  // Set random starting movie index on initial load
+  useEffect(() => {
+    if (moviesToUse.length > 0 && currentMovieIndex === 0 && prevFilteredLength === 0) {
+      // Only randomize on very first load, not on subsequent filter changes
+      const randomIndex = Math.floor(Math.random() * Math.min(moviesToUse.length, 50)); // Random within first 50 to avoid too much delay
+      setCurrentMovieIndex(randomIndex);
+      setStartingMovieIndex(randomIndex);
+      setVisitedMovies([randomIndex]);
+      setCurrentPosition(0);
+    }
+  }, [moviesToUse.length, currentMovieIndex, prevFilteredLength]);
 
   // Filter movies by selected genres, language, year, and rating range
   let filteredMovies = moviesToUse.filter((m) => {
     if (m.released === false) return false;
     // Genre filter
-    if (selectedGenres.length > 0) {
+    if (genres.length > 0) {
       if (Array.isArray(m.genre)) {
-        if (!m.genre.some((g) => selectedGenres.includes(g))) return false;
+        if (!m.genre.some((g) => genres.includes(g))) return false;
       } else {
-        if (!selectedGenres.includes(m.genre)) return false;
+        if (!genres.includes(m.genre)) return false;
       }
     }
     // Language filter (case-insensitive, fallback to English if missing)
-    if (selectedLanguage && Object.prototype.hasOwnProperty.call(m, 'language')) {
-      if (typeof m.language === 'string' && m.language.toLowerCase() !== selectedLanguage.toLowerCase()) return false;
-    } else if (selectedLanguage && selectedLanguage.toLowerCase() !== 'en') {
+    if (language && Object.prototype.hasOwnProperty.call(m, 'language')) {
+      if (typeof m.language === 'string' && m.language.toLowerCase() !== language.toLowerCase()) return false;
+    } else if (language && language.toLowerCase() !== 'en') {
       // If movie has no language field, only show for English
       return false;
     }
     // Year range filter
-    if (m.year < selectedYearRange[0] || m.year > selectedYearRange[1]) return false;
+    if (m.year < yearRange[0] || m.year > yearRange[1]) return false;
     // Rating range filter
-    if (m.rating < selectedRatingRange[0] || m.rating > selectedRatingRange[1]) return false;
+    if (m.rating < ratingRange[0] || m.rating > ratingRange[1]) return false;
     return true;
   });
 
@@ -192,6 +182,17 @@ export function SwipeArea({
     setRandomOrder([]); // Reset random order if not in random mode
   }
 
+  // Randomize starting movie index when filtered movies change
+  // This ensures a different first movie is shown each time filters are applied
+  if (filteredMovies.length > 0 && filteredMovies.length !== prevFilteredLength) {
+    const randomStartIndex = Math.floor(Math.random() * filteredMovies.length);
+    setCurrentMovieIndex(randomStartIndex);
+    setStartingMovieIndex(randomStartIndex);
+    setVisitedMovies([randomStartIndex]);
+    setCurrentPosition(0);
+    setPrevFilteredLength(filteredMovies.length);
+  }
+
   const currentMovie = filteredMovies[currentMovieIndex] as Movie;
 
   if (loading) {
@@ -208,26 +209,42 @@ export function SwipeArea({
   const handleSwipe = (movieId: number, liked: boolean) => {
     onSwipe(movieId, liked);
     setSwipeHistory(prev => [...prev, movieId]);
-    // Move to next movie
+    
+    // Find next unvisited movie
     setTimeout(() => {
-      setCurrentMovieIndex(prev => 
-        prev < filteredMovies.length - 1 ? prev + 1 : 0
-      );
+      let nextIndex = currentMovieIndex;
+      let attempts = 0;
+      const maxAttempts = filteredMovies.length;
+      
+      // Find next movie that hasn't been visited
+      do {
+        nextIndex = (nextIndex + 1) % filteredMovies.length;
+        attempts++;
+      } while (visitedMovies.includes(nextIndex) && attempts < maxAttempts);
+      
+      // If all movies have been visited, cycle back to start
+      if (attempts >= maxAttempts) {
+        nextIndex = startingMovieIndex;
+        // Reset visited movies but keep the starting point
+        setVisitedMovies([startingMovieIndex]);
+        setCurrentPosition(0);
+      } else {
+        // Add new movie to visited list
+        setVisitedMovies(prev => [...prev, nextIndex]);
+        setCurrentPosition(prev => prev + 1);
+      }
+      
+      setCurrentMovieIndex(nextIndex);
     }, 500);
-    // Simulate match checking (in real app, this would be handled by Firebase)
-    if (liked) {
-      setTimeout(() => {
-        // Simulate other users liking the same movie
-        const likeCount = Math.floor(Math.random() * 8) + 3; // 3-10 likes
-        if (likeCount >= 5) {
-          const newMatch: MovieMatch = {
-            movie: currentMovie,
-            likedByUsers: Array.from({ length: likeCount }, (_, i) => `user-${i}`),
-            matchedAt: new Date()
-          };
-          onNewMatch(newMatch);
-        }
-      }, 1000);
+  };
+
+  // Handle going back to previous movie
+  const handleBack = () => {
+    if (currentPosition > 0) {
+      const prevPosition = currentPosition - 1;
+      const prevMovieIndex = visitedMovies[prevPosition];
+      setCurrentMovieIndex(prevMovieIndex);
+      setCurrentPosition(prevPosition);
     }
   };
 
@@ -324,58 +341,6 @@ export function SwipeArea({
 
   return (
     <div className="min-h-screen flex">
-      {/* Sidebar for desktop */}
-      {/* Filter Sidebar Modal and Overlay */}
-      <button
-        className="fixed top-6 left-6 z-30 bg-primary text-white px-5 py-2 rounded-full shadow-lg font-bold hover:bg-primary/90 transition-all md:static md:ml-0 md:mt-0 md:relative"
-        onClick={() => setSidebarOpen(true)}
-        style={{ display: sidebarOpen ? 'none' : undefined }}
-      >
-        Filter
-      </button>
-      {sidebarOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black bg-opacity-60 z-40 transition-opacity duration-300"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <aside
-            className="fixed top-0 left-0 h-full w-96 max-w-full bg-zinc-900 text-white z-50 shadow-2xl rounded-r-2xl p-8 transition-transform duration-300 transform translate-x-0 overflow-y-auto"
-            style={{ borderTopRightRadius: '1.5rem', borderBottomRightRadius: '1.5rem' }}
-          >
-            <button
-              className="absolute top-4 right-4 text-2xl text-white hover:text-primary"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close sidebar"
-            >
-              ×
-            </button>
-            <FilterSidebar
-              genres={allGenres}
-              selectedGenres={selectedGenres}
-              onGenreChange={setSelectedGenres}
-              yearRange={[minYear, maxYear]}
-              selectedYearRange={selectedYearRange}
-              onYearRangeChange={setSelectedYearRange}
-              ratingRange={[0, 10]}
-              selectedRatingRange={selectedRatingRange}
-              onRatingRangeChange={setSelectedRatingRange}
-              languages={allLanguages}
-              selectedLanguage={selectedLanguage}
-              onLanguageChange={setSelectedLanguage}
-              sortBy={sortBy}
-              onSortByChange={(sort) => { setSortBy(sort as SortBy); setAutoApplyCounter(c => c + 1); }}
-              autoApplyTrigger={autoApplyCounter}
-              onReset={() => {
-                setSelectedGenres(allGenres);
-                setSelectedYearRange([DEFAULT_MIN_YEAR, new Date().getFullYear()]);
-                setSelectedRatingRange([DEFAULT_MIN_RATING, 10]);
-                setSelectedLanguage('en');
-              }}
-            />
-          </aside>
-        </>
-      )}
       {/* Main content */}
       <div className="flex-1 p-6">
 
@@ -483,8 +448,22 @@ export function SwipeArea({
               <button
                 className="bg-primary text-white px-6 py-2 rounded-full text-sm font-semibold hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/70 active:scale-95 transition-all duration-150 shadow-md"
                 onClick={() => {
-                  setCurrentMovieIndex(0);
+                  // Apply current sort and randomize starting movie
+                  const currentFilteredLength = filteredMovies.length;
+                  if (currentFilteredLength > 0) {
+                    const randomIndex = Math.floor(Math.random() * currentFilteredLength);
+                    setCurrentMovieIndex(randomIndex);
+                    setStartingMovieIndex(randomIndex);
+                    setVisitedMovies([randomIndex]);
+                    setCurrentPosition(0);
+                  } else {
+                    setCurrentMovieIndex(0);
+                    setStartingMovieIndex(0);
+                    setVisitedMovies([0]);
+                    setCurrentPosition(0);
+                  }
                   if (sortBy === 'random') setRandomOrder([]);
+                  setPrevFilteredLength(currentFilteredLength);
                 }}
               >
                 Apply
@@ -532,12 +511,39 @@ export function SwipeArea({
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="max-w-md mx-auto mt-6">
+        {/* Progress Bar and Navigation */}
+        <div className="max-w-md mx-auto mt-6 space-y-4">
+          {/* Back Button */}
+          <div className="flex justify-center">
+            <Button
+              onClick={handleBack}
+              disabled={currentPosition === 0}
+              variant="outline"
+              size="sm"
+              className="btn-pill flex items-center gap-2"
+            >
+              <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
+                <path d="M10 12l-4-4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Back
+            </Button>
+          </div>
+          
+          {/* Progress Bar - shows progress from starting point */}
           <ProgressBar 
-            current={currentMovieIndex + 1} 
-            total={filteredMovies.length} 
+            current={currentPosition + 1} 
+            total={Math.min(visitedMovies.length + Math.max(0, filteredMovies.length - visitedMovies.length), filteredMovies.length)} 
           />
+          
+          {/* Progress Text */}
+          <p className="text-center text-sm text-muted-foreground">
+            Visited {visitedMovies.length} of {filteredMovies.length} movies
+            {startingMovieIndex !== 0 && (
+              <span className="block text-xs opacity-75">
+                Started from movie #{startingMovieIndex + 1}
+              </span>
+            )}
+          </p>
         </div>
       </div>
 

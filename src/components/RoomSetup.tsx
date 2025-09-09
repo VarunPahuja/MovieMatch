@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 
 interface RoomSetupProps {
-  onCreateRoom: (roomName: string, userName: string) => void;
+  onCreateRoom: (roomName: string, userName: string, expectedMembers?: number) => void;
   onJoinRoom: (roomCode: string, userName: string) => void;
   loading?: boolean;
 }
@@ -17,10 +17,25 @@ export function RoomSetup({ onCreateRoom, onJoinRoom, loading }: RoomSetupProps)
   const [roomCode, setRoomCode] = useState('');
   const [userName, setUserName] = useState('');
   const [creatorName, setCreatorName] = useState('');
+  const [expectedMembers, setExpectedMembers] = useState(2);
+  const [membersError, setMembersError] = useState('');
 
   const handleCreateRoom = () => {
-    if (roomName.trim() && creatorName.trim()) {
-      onCreateRoom(roomName.trim(), creatorName.trim());
+    if (roomName.trim() && creatorName.trim() && !membersError && expectedMembers >= 2 && expectedMembers <= 10) {
+      onCreateRoom(roomName.trim(), creatorName.trim(), expectedMembers);
+    }
+  };
+
+  const handleMembersChange = (value: string) => {
+    const numValue = parseInt(value) || 0;
+    setExpectedMembers(numValue);
+    
+    if (value === '' || numValue < 2) {
+      setMembersError('Minimum 2 members required');
+    } else if (numValue > 10) {
+      setMembersError('Maximum 10 members allowed');
+    } else {
+      setMembersError('');
     }
   };
 
@@ -121,6 +136,27 @@ export function RoomSetup({ onCreateRoom, onJoinRoom, loading }: RoomSetupProps)
                 onKeyPress={(e) => e.key === 'Enter' && handleCreateRoom()}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="expected-members">Expected Members</Label>
+              <Input
+                id="expected-members"
+                type="text"
+                placeholder="2"
+                value={expectedMembers || ''}
+                onChange={(e) => handleMembersChange(e.target.value)}
+                className={membersError ? 'border-red-500' : ''}
+              />
+              {membersError ? (
+                <p className="text-xs text-red-500">
+                  {membersError}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Number of people who will join this room (2-10)
+                </p>
+              )}
+            </div>
             
             <div className="flex gap-2">
               <Button 
@@ -133,7 +169,7 @@ export function RoomSetup({ onCreateRoom, onJoinRoom, loading }: RoomSetupProps)
               <Button 
                 variant="movie" 
                 onClick={handleCreateRoom}
-                disabled={!roomName.trim() || !creatorName.trim() || loading}
+                disabled={!roomName.trim() || !creatorName.trim() || !!membersError || expectedMembers < 2 || expectedMembers > 10 || loading}
                 className="flex-1"
               >
                 {loading ? 'Creating...' : 'Create Room'}

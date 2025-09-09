@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { 
   FirebaseRoomService, 
   FirebaseSwipeService, 
-  FirebaseMatchService
+  FirebaseMatchService,
+  FirebasePresenceService
 } from '@/services/firebase';
-import { Room, MovieSwipe, MovieMatch, RoomUser } from '@/types/Movie';
+import { Room, MovieSwipe, MovieMatch, RoomUser, PresenceInfo } from '@/types/Movie';
 
 export interface UseFirebaseRoomReturn {
   room: Room | null;
@@ -12,8 +13,9 @@ export interface UseFirebaseRoomReturn {
   error: string | null;
   swipes: MovieSwipe[];
   matches: MovieMatch[];
+  onlineUsers: PresenceInfo[]; // Add presence information
   createRoom: (roomData: Omit<Room, 'id' | 'code'> & { code?: string }) => Promise<string>;
-  joinRoom: (roomCode: string, user: RoomUser) => Promise<boolean>;
+  joinRoom: (roomCode: string, user: RoomUser, sessionId?: string) => Promise<boolean>;
   leaveRoom: (userId: string) => Promise<void>;
   recordSwipe: (swipe: MovieSwipe) => Promise<void>;
   connected: boolean;
@@ -25,6 +27,7 @@ export const useFirebaseRoom = (roomCode?: string): UseFirebaseRoomReturn => {
   const [error, setError] = useState<string | null>(null);
   const [swipes, setSwipes] = useState<MovieSwipe[]>([]);
   const [matches, setMatches] = useState<MovieMatch[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<PresenceInfo[]>([]);
   const [connected, setConnected] = useState(true);
 
   // Create a new room
@@ -46,16 +49,21 @@ export const useFirebaseRoom = (roomCode?: string): UseFirebaseRoomReturn => {
   }, []);
 
   // Join an existing room
-  const joinRoom = useCallback(async (code: string, user: RoomUser): Promise<boolean> => {
+  const joinRoom = useCallback(async (code: string, user: RoomUser, sessionId?: string): Promise<boolean> => {
     setLoading(true);
     setError(null);
     
     try {
-      const success = await FirebaseRoomService.joinRoom(code, user);
+      const success = await FirebaseRoomService.joinRoom(code, user, sessionId);
       if (!success) {
         setError('Room not found');
         return false;
       }
+
+      // Set user as online after successfully joining
+      const userSessionId = sessionId || `session_${Date.now()}_${Math.random()}`;
+      await FirebasePresenceService.setUserOnline(code, user.id, userSessionId);
+      
       return true;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to join room';
@@ -72,6 +80,8 @@ export const useFirebaseRoom = (roomCode?: string): UseFirebaseRoomReturn => {
     
     try {
       await FirebaseRoomService.leaveRoom(roomCode, userId);
+      // Set user as offline when leaving
+      await FirebasePresenceService.setUserOffline(roomCode, userId);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to leave room';
       setError(errorMessage);
@@ -96,6 +106,7 @@ export const useFirebaseRoom = (roomCode?: string): UseFirebaseRoomReturn => {
       setRoom(null);
       setSwipes([]);
       setMatches([]);
+      setOnlineUsers([]);
       return;
     }
 
@@ -120,11 +131,17 @@ export const useFirebaseRoom = (roomCode?: string): UseFirebaseRoomReturn => {
       setMatches(updatedMatches);
     });
 
+    // Subscribe to presence updates
+    const unsubscribePresence = FirebasePresenceService.subscribeToPresence(roomCode, (onlineUsers) => {
+      setOnlineUsers(onlineUsers);
+    });
+
     // Cleanup subscriptions
     return () => {
       unsubscribeRoom();
       unsubscribeSwipes();
       unsubscribeMatches();
+      unsubscribePresence();
     };
   }, [roomCode]);
 
@@ -151,6 +168,7 @@ export const useFirebaseRoom = (roomCode?: string): UseFirebaseRoomReturn => {
     error,
     swipes,
     matches,
+    onlineUsers,
     createRoom,
     joinRoom,
     leaveRoom,

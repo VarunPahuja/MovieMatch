@@ -7,11 +7,19 @@ import {
   off, 
   remove,
   update,
+  onDisconnect,
   DatabaseReference,
   DataSnapshot
 } from 'firebase/database';
 import { database } from '@/config/firebase';
-import { Room, MovieSwipe, RoomUser, MovieMatch } from '@/types/Movie';
+import { 
+  Room, 
+  RoomUser, 
+  MovieSwipe, 
+  MovieMatch,
+  UserSession,
+  PresenceInfo
+} from '@/types/Movie';
 import { FirebaseAuthService } from './firebaseAuth';
 
 // Room Management
@@ -96,7 +104,7 @@ export class FirebaseRoomService {
   }
 
   // Join an existing room
-  static async joinRoom(roomCode: string, user: RoomUser): Promise<boolean> {
+  static async joinRoom(roomCode: string, user: RoomUser, sessionId?: string): Promise<boolean> {
     try {
       // Ensure user is authenticated
       console.log('Attempting to join room with code:', roomCode);
@@ -112,9 +120,17 @@ export class FirebaseRoomService {
 
       console.log('Room found, adding user:', user.name);
       // Remove undefined properties before sending to Firebase
-      const cleanUser = this.sanitizeData({
+      const userWithSession = {
         ...user,
-        joinedAt: Date.now()
+        sessionId: sessionId || FirebaseSessionService.generateSessionId(),
+        lastSeen: new Date(),
+        isConnected: true
+      };
+
+      const cleanUser = this.sanitizeData({
+        ...userWithSession,
+        joinedAt: Date.now(),
+        lastSeen: Date.now()
       });
 
       const usersRef = ref(database, `rooms/${roomCode}/users/${user.id}`);
@@ -233,6 +249,12 @@ export class FirebaseMatchService {
     });
   }
 
+  // Remove a match
+  static async removeMatch(roomCode: string, movieId: number): Promise<void> {
+    const matchRef = ref(database, `rooms/${roomCode}/matches/${movieId}`);
+    await remove(matchRef);
+  }
+
   // Get all matches for a room
   static async getRoomMatches(roomCode: string): Promise<MovieMatch[]> {
     const matchesRef = ref(database, `rooms/${roomCode}/matches`);
@@ -280,3 +302,215 @@ export const checkFirebaseConnection = async (): Promise<boolean> => {
     return false;
   }
 };
+
+// Session Management Service
+export class FirebaseSessionService {
+  private static readonly GRACE_PERIOD_MS = 2 * 60 * 1000; // 2 minutes
+
+  // Generate a unique session ID
+  static generateSessionId(): string {
+    return `session-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+  }
+
+  // Create or restore a session
+  static async createSession(roomCode: string, userId: string, sessionId?: string): Promise<string> {
+    const finalSessionId = sessionId || this.generateSessionId();
+    const sessionRef = ref(database, `sessions/${roomCode}/${finalSessionId}`);
+    
+    const sessionData: UserSession = {
+      sessionId: finalSessionId,
+      userId,
+      roomCode,
+      createdAt: new Date(),
+      lastActivity: new Date(),
+      isActive: true
+    };
+
+    await set(sessionRef, {
+      ...sessionData,
+      createdAt: Date.now(),
+      lastActivity: Date.now()
+    });
+
+    return finalSessionId;
+  }
+
+  // Update session activity
+  static async updateSessionActivity(roomCode: string, sessionId: string): Promise<void> {
+    const sessionRef = ref(database, `sessions/${roomCode}/${sessionId}/lastActivity`);
+    await set(sessionRef, Date.now());
+  }
+
+  // Mark session as inactive
+  static async deactivateSession(roomCode: string, sessionId: string): Promise<void> {
+    const sessionRef = ref(database, `sessions/${roomCode}/${sessionId}/isActive`);
+    await set(sessionRef, false);
+  }
+
+  // Get active sessions for a room
+  static async getActiveSessions(roomCode: string): Promise<UserSession[]> {
+    const sessionsRef = ref(database, `sessions/${roomCode}`);
+    const snapshot = await get(sessionsRef);
+    
+    if (!snapshot.exists()) {
+      return [];
+    }
+
+    const sessions = Object.values(snapshot.val()) as Array<{
+      sessionId: string;
+      userId: string;
+      roomCode: string;
+      createdAt: number;
+      lastActivity: number;
+      isActive: boolean;
+    }>;
+    const now = Date.now();
+
+    return sessions
+      .filter(session => {
+        const lastActivity = session.lastActivity || session.createdAt;
+        const timeSinceActivity = now - lastActivity;
+        return session.isActive && timeSinceActivity < this.GRACE_PERIOD_MS;
+      })
+      .map(session => ({
+        ...session,
+        createdAt: new Date(session.createdAt),
+        lastActivity: new Date(session.lastActivity || session.createdAt)
+      }));
+  }
+
+  // Clean up expired sessions
+  static async cleanupExpiredSessions(roomCode: string): Promise<void> {
+    const sessionsRef = ref(database, `sessions/${roomCode}`);
+    const snapshot = await get(sessionsRef);
+    
+    if (!snapshot.exists()) {
+      return;
+    }
+
+    const sessions = snapshot.val();
+    const now = Date.now();
+    const updates: { [key: string]: null } = {};
+
+    Object.keys(sessions).forEach(sessionId => {
+      const session = sessions[sessionId];
+      const lastActivity = session.lastActivity || session.createdAt;
+      const timeSinceActivity = now - lastActivity;
+
+      if (timeSinceActivity >= this.GRACE_PERIOD_MS) {
+        updates[sessionId] = null; // This will delete the session
+      }
+    });
+
+    if (Object.keys(updates).length > 0) {
+      await update(sessionsRef, updates);
+    }
+  }
+}
+
+// Presence Management Service
+export class FirebasePresenceService {
+  // Set user as online
+  static async setUserOnline(roomCode: string, userId: string, sessionId: string): Promise<void> {
+    const presenceRef = ref(database, `presence/${roomCode}/${userId}`);
+    const presenceData: PresenceInfo = {
+      userId,
+      sessionId,
+      isOnline: true,
+      lastSeen: new Date(),
+      userAgent: navigator.userAgent
+    };
+
+    await set(presenceRef, {
+      ...presenceData,
+      lastSeen: Date.now()
+    });
+
+    // Set up automatic offline detection
+    const connectedRef = ref(database, '.info/connected');
+    onValue(connectedRef, (snapshot) => {
+      if (snapshot.val() === false) {
+        // User went offline, mark as disconnected
+        this.setUserOffline(roomCode, userId);
+      }
+    });
+
+    // Set up onDisconnect to mark user as offline
+    const onDisconnectRef = ref(database, `presence/${roomCode}/${userId}/isOnline`);
+    onDisconnect(onDisconnectRef).set(false);
+    
+    const onDisconnectLastSeenRef = ref(database, `presence/${roomCode}/${userId}/lastSeen`);
+    onDisconnect(onDisconnectLastSeenRef).set(Date.now());
+  }
+
+  // Set user as offline
+  static async setUserOffline(roomCode: string, userId: string): Promise<void> {
+    const presenceRef = ref(database, `presence/${roomCode}/${userId}`);
+    await update(presenceRef, {
+      isOnline: false,
+      lastSeen: Date.now()
+    });
+  }
+
+  // Get online users for a room
+  static async getOnlineUsers(roomCode: string): Promise<PresenceInfo[]> {
+    const presenceRef = ref(database, `presence/${roomCode}`);
+    const snapshot = await get(presenceRef);
+    
+    if (!snapshot.exists()) {
+      return [];
+    }
+
+    const presenceData = snapshot.val();
+    return Object.values(presenceData)
+      .map((presence: {
+        userId: string;
+        sessionId: string;
+        isOnline: boolean;
+        lastSeen: number;
+        userAgent?: string;
+      }) => ({
+        ...presence,
+        lastSeen: new Date(presence.lastSeen)
+      }))
+      .filter((presence: PresenceInfo) => presence.isOnline);
+  }
+
+  // Subscribe to presence updates
+  static subscribeToPresence(
+    roomCode: string,
+    callback: (onlineUsers: PresenceInfo[]) => void
+  ): () => void {
+    const presenceRef = ref(database, `presence/${roomCode}`);
+    
+    const unsubscribe = onValue(presenceRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const presenceData = snapshot.val();
+        const onlineUsers = Object.values(presenceData)
+          .map((presence: {
+            userId: string;
+            sessionId: string;
+            isOnline: boolean;
+            lastSeen: number;
+            userAgent?: string;
+          }) => ({
+            ...presence,
+            lastSeen: new Date(presence.lastSeen)
+          }))
+          .filter((presence: PresenceInfo) => presence.isOnline);
+        
+        callback(onlineUsers);
+      } else {
+        callback([]);
+      }
+    });
+
+    return () => off(presenceRef, 'value', unsubscribe);
+  }
+
+  // Update user's last seen timestamp
+  static async updateLastSeen(roomCode: string, userId: string): Promise<void> {
+    const lastSeenRef = ref(database, `presence/${roomCode}/${userId}/lastSeen`);
+    await set(lastSeenRef, Date.now());
+  }
+}

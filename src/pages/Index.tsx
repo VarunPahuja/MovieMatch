@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import StartScreen from '@/components/StartScreen';
 import { RoomSetup } from '@/components/RoomSetup';
 import { SwipeArea } from '@/components/SwipeArea';
+import { MemberList } from '@/components/MemberList';
 import { Movie, Room, RoomUser, MovieMatch, MovieSwipe } from '@/types/Movie';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebaseRoom, useFirebaseUser } from '@/hooks/useFirebase';
@@ -36,6 +37,7 @@ const Index = () => {
     error, 
     swipes, 
     matches, 
+    onlineUsers,
     createRoom, 
     joinRoom, 
     recordSwipe,
@@ -47,6 +49,15 @@ const Index = () => {
   const [currentUser, setCurrentUser] = useState<RoomUser | null>(null);
   const [localMatches, setLocalMatches] = useState<MovieMatch[]>([]);
   const [localSwipes, setLocalSwipes] = useState<MovieSwipe[]>([]);
+
+  // Movie filter states
+  const [allMovies, setAllMovies] = useState<Movie[]>([]);
+  const [allGenres, setAllGenres] = useState<string[]>([]);
+  const [allLanguages, setAllLanguages] = useState<string[]>([]);
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]); // Start with no genres selected
+  const [selectedYearRange, setSelectedYearRange] = useState<[number, number]>([2022, new Date().getFullYear()]);
+  const [selectedRatingRange, setSelectedRatingRange] = useState<[number, number]>([6.5, 10]);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
 
   // Initialize test user ID
   useEffect(() => {
@@ -93,6 +104,62 @@ const Index = () => {
     });
   }, [testMode, testCommon, toast]);
 
+  // Load movies and initialize filter data
+  useEffect(() => {
+    const loadMovies = async () => {
+      try {
+        const moviesModule = await import('@/data/clean_movies.json');
+        const movies: Movie[] = moviesModule.default as Movie[];
+        setAllMovies(movies);
+
+        // Extract genres
+        const genreSet = new Set<string>();
+        movies.forEach(m => {
+          if (Array.isArray(m.genre)) m.genre.forEach(g => genreSet.add(g));
+          else if (typeof m.genre === 'string') genreSet.add(m.genre);
+        });
+        const genres = Array.from(genreSet).sort();
+        setAllGenres(genres);
+        setSelectedGenres(genres); // Select all genres by default
+
+        // Extract languages
+        const languageSet = new Set<string>();
+        movies.forEach(m => {
+          if ('language' in m && m.language) languageSet.add(m.language);
+        });
+        setAllLanguages(Array.from(languageSet).sort());
+      } catch (error) {
+        console.error('Failed to load movies:', error);
+      }
+    };
+
+    loadMovies();
+  }, []);
+
+  // Filter handlers
+  const handleGenreChange = (genres: string[]) => {
+    setSelectedGenres(genres);
+  };
+
+  const handleYearRangeChange = (range: [number, number]) => {
+    setSelectedYearRange(range);
+  };
+
+  const handleRatingRangeChange = (range: [number, number]) => {
+    setSelectedRatingRange(range);
+  };
+
+  const handleLanguageChange = (language: string) => {
+    setSelectedLanguage(language);
+  };
+
+  const handleFilterReset = () => {
+    setSelectedGenres([]); // Reset to no genres selected
+    setSelectedYearRange([2022, new Date().getFullYear()]);
+    setSelectedRatingRange([6.5, 10]);
+    setSelectedLanguage('en');
+  };
+
   // Handle test button likes
   const handleTestLike = async (btn: number) => {
     if (!testUserId) return;
@@ -109,7 +176,7 @@ const Index = () => {
     }
   };
   // Firebase room creation
-  const handleCreateRoomFirebase = async (roomName: string, userName: string) => {
+  const handleCreateRoomFirebase = async (roomName: string, userName: string, expectedMembers: number = 2) => {
     try {
       const newUser = createUser(userName);
       const roomId = await createRoom({
@@ -117,14 +184,16 @@ const Index = () => {
         createdAt: new Date(),
         users: { [newUser.id]: newUser },
         currentMovieIndex: 0,
-        matches: []
+        matches: [],
+        expectedMembers: expectedMembers,
+        matchThreshold: expectedMembers // Set the fixed match threshold
       });
       
       setRoomCode(roomId);
       
       toast({
         title: "Room Created!",
-        description: `Room code: ${roomId}. Share this with friends to join.`,
+        description: `Room code: ${roomId}. Match threshold set to ${expectedMembers} likes.`,
       });
     } catch (err) {
       toast({
@@ -168,7 +237,7 @@ const Index = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   };
 
-  const handleCreateRoomLocal = (roomName: string, userName: string) => {
+  const handleCreateRoomLocal = (roomName: string, userName: string, expectedMembers: number = 2) => {
     const roomCodeLocal = generateRoomCode();
     const newRoom: Room = {
       id: `room-${Date.now()}`,
@@ -177,7 +246,9 @@ const Index = () => {
       createdAt: new Date(),
       users: {},
       currentMovieIndex: 0,
-      matches: []
+      matches: [],
+      expectedMembers: expectedMembers,
+      matchThreshold: expectedMembers
     };
 
     // Create user for room creator
@@ -193,7 +264,7 @@ const Index = () => {
     
     toast({
       title: "Room Created!",
-      description: `Room code: ${roomCodeLocal}. Share this with friends to join.`,
+      description: `Room code: ${roomCodeLocal}. Match threshold: ${expectedMembers} likes needed.`,
     });
   };
 
@@ -213,7 +284,9 @@ const Index = () => {
       createdAt: new Date(),
       users: { [newUser.id]: newUser },
       currentMovieIndex: 0,
-      matches: []
+      matches: [],
+      expectedMembers: 3,
+      matchThreshold: 3
     };
 
     // Simulate other users in the room
@@ -307,15 +380,16 @@ const Index = () => {
     // Get unique users who liked this movie
     const uniqueUserIds = [...new Set(movieSwipes.map(swipe => swipe.userId))];
 
-    // Require at least 2 people to like it for a match
-    const minLikesForMatch = Math.min(2, Object.keys(room.users).length);
+    // Use the fixed match threshold from room settings
+    const requiredLikes = room.matchThreshold;
     
-    if (uniqueUserIds.length >= minLikesForMatch) {
-      // Check if this match already exists
-      const existingMatch = matches.find(match => match.movie.id === movieId);
-      
+    // Check if this match currently exists
+    const existingMatch = matches.find(match => match.movie.id === movieId);
+    
+    if (uniqueUserIds.length >= requiredLikes) {
+      // Should be a match
       if (!existingMatch) {
-        // Find the movie data
+        // Find the movie data and add new match
         const movieData = await getMovieData(movieId);
         
         if (movieData) {
@@ -329,11 +403,24 @@ const Index = () => {
           await addMatchToFirebase(newMatch);
           
           toast({
-            title: "🎉 New Match!",
-            description: `"${movieData.title}" is loved by ${uniqueUserIds.length} people!`,
+            title: "🎉 Perfect Match!",
+            description: `"${movieData.title}" reached ${requiredLikes} likes threshold!`,
             variant: "default"
           });
         }
+      }
+    } else {
+      // Should NOT be a match anymore - remove if it exists
+      if (existingMatch) {
+        // Remove the match from Firebase
+        const { FirebaseMatchService } = await import('@/services/firebase');
+        await FirebaseMatchService.removeMatch(roomCode, movieId);
+        
+        toast({
+          title: "Match Removed",
+          description: `"${existingMatch.movie.title}" no longer meets the ${requiredLikes} likes threshold`,
+          variant: "destructive"
+        });
       }
     }
   }, [room, roomCode, swipes, matches, toast, addMatchToFirebase]);
@@ -499,24 +586,52 @@ const Index = () => {
     );
   }
 
-  // 3. Show main app
+  // 3. Show main app with member list sidebar
   return (
-    <SwipeArea
-      roomCode={activeRoom.code}
-      users={Object.values(activeRoom.users)} // Convert Record<string, RoomUser> to RoomUser[]
-      matches={activeMatches}
-      onSwipe={handleSwipe}
-      onNewMatch={handleNewMatch}
-      genres={[]}
-      language={''}
-      yearRange={[2022, new Date().getFullYear()]}
-      ratingRange={[6.5, 10]}
-      // New real-time props
-      realTimeSwipes={activeSwipes}
-      currentUser={activeUser}
-      connected={useFirebase ? connected : true}
-      onLeaveRoom={handleLeaveRoom}
-    />
+    <div className="min-h-screen flex">
+      {/* Member List Sidebar */}
+      <div className="w-80 bg-gradient-to-b from-slate-900 to-slate-800 border-r border-white/10 p-4">
+        <MemberList 
+          room={activeRoom}
+          onlineUserIds={onlineUsers.map(user => user.userId)} // Use real presence data
+          currentUserId={activeUser?.id} // Pass current user ID so they get "(You)" label
+          className="sticky top-4"
+          genres={allGenres}
+          selectedGenres={selectedGenres}
+          onGenreChange={handleGenreChange}
+          yearRange={[Math.min(...allMovies.map(m => m.year)) || 1980, Math.max(...allMovies.map(m => m.year)) || new Date().getFullYear()]}
+          selectedYearRange={selectedYearRange}
+          onYearRangeChange={handleYearRangeChange}
+          ratingRange={[0, 10]}
+          selectedRatingRange={selectedRatingRange}
+          onRatingRangeChange={handleRatingRangeChange}
+          languages={allLanguages}
+          selectedLanguage={selectedLanguage}
+          onLanguageChange={handleLanguageChange}
+          onFilterReset={handleFilterReset}
+        />
+      </div>
+      
+      {/* Main Swipe Area */}
+      <div className="flex-1">
+        <SwipeArea
+          roomCode={activeRoom.code}
+          users={Object.values(activeRoom.users)} // Convert Record<string, RoomUser> to RoomUser[]
+          matches={activeMatches}
+          onSwipe={handleSwipe}
+          onNewMatch={handleNewMatch}
+          genres={selectedGenres}
+          language={selectedLanguage}
+          yearRange={selectedYearRange}
+          ratingRange={selectedRatingRange}
+          // New real-time props
+          realTimeSwipes={activeSwipes}
+          currentUser={activeUser}
+          connected={useFirebase ? connected : true}
+          onLeaveRoom={handleLeaveRoom}
+        />
+      </div>
+    </div>
   );
 };
 
